@@ -5,26 +5,18 @@ import {
   academicYearFor,
   academicYearLabel,
   todayLocalISO,
+  type AyConfig,
 } from '../lib/academicYear'
 import { useSpeech } from '../hooks/useSpeech'
 import { VoiceField } from '../components/VoiceField'
+import { CptConfirm, type CptChoice } from '../components/CptConfirm'
+import type { CptMap } from '../cpt'
 
 const ROLES: ResidentRole[] = ['Surgeon-Chief', 'Surgeon-Junior', 'First Assistant', 'Teaching Assistant']
 const PGYS = [1, 2, 3, 4, 5, 6, 7]
-// Seed list for the rotation picker; the editable/synced list arrives with the
-// Settings screen (user_settings.rotations).
-const DEFAULT_ROTATIONS = [
-  'General Surgery',
-  'Trauma',
-  'SICU',
-  'Colorectal',
-  'Vascular',
-  'Pediatric Surgery',
-  'Surgical Oncology',
-  'Night Float',
-]
 
 type VoiceTarget = 'attending' | 'caseName' | 'role'
+type Step = 'edit' | 'review' | 'cpt'
 
 /** Append a dictated phrase to existing text (so multiple utterances accumulate). */
 function joinSpeech(prev: string, text: string): string {
@@ -46,20 +38,22 @@ function matchRole(text: string): ResidentRole | null {
 interface Props {
   onCancel: () => void
   onSave: (payload: CaseInsert) => Promise<void>
+  rotations: string[]
+  cptMap?: CptMap
+  ayConfig?: AyConfig
 }
 
-// Phase 2: voice dictation for attending, role, and case name (CPT suggestions
-// = Phase 3). Two steps: edit -> review. Nothing is saved without the review
-// confirmation; manual text editing is always available as a fallback.
-export function NewCaseScreen({ onCancel, onSave }: Props) {
+// Phase 2+3: voice dictation + CPT confirmation.
+// Flow: edit -> review -> CPT confirm -> save. Manual editing is always
+// available; nothing is saved without the final confirmation.
+export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = DEFAULT_AY_CONFIG }: Props) {
   const [attending, setAttending] = useState('')
   const [role, setRole] = useState<ResidentRole | ''>('')
   const [caseName, setCaseName] = useState('')
-  const [cpt, setCpt] = useState('') // manual until Phase 3
   const [rotation, setRotation] = useState('')
   const [pgy, setPgy] = useState<number | ''>('')
   const [surgeryDate, setSurgeryDate] = useState(todayLocalISO())
-  const [review, setReview] = useState(false)
+  const [step, setStep] = useState<Step>('edit')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [roleNote, setRoleNote] = useState<string | null>(null)
@@ -67,7 +61,6 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
   const speech = useSpeech()
   const [activeField, setActiveField] = useState<VoiceTarget | null>(null)
 
-  // When a recognition session ends, clear the active-field highlight.
   useEffect(() => {
     if (!speech.listening) setActiveField(null)
   }, [speech.listening])
@@ -96,16 +89,17 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
     })
   }
 
-  const handleSave = async () => {
+  async function handleSave(cpt: CptChoice) {
     setSaving(true)
     setError(null)
     try {
       const payload: CaseInsert = {
-        academic_year: academicYearFor(surgeryDate, DEFAULT_AY_CONFIG),
+        academic_year: academicYearFor(surgeryDate, ayConfig),
         attending_name: attending.trim(),
         resident_role: role as ResidentRole,
         case_name: caseName.trim(),
-        cpt_code: cpt.trim() || null,
+        cpt_code: cpt.code,
+        cpt_description: cpt.description,
         rotation: rotation.trim() || null,
         pgy_year: pgy === '' ? null : pgy,
         surgery_date: surgeryDate,
@@ -114,14 +108,30 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
       setSaving(false)
+      setStep('review') // bring the user back to a screen with the error visible
     }
   }
 
-  if (review) {
+  if (step === 'cpt') {
+    return (
+      <>
+        {error && <div className="banner banner--error">{error}</div>}
+        <CptConfirm
+          caseName={caseName}
+          map={cptMap}
+          saving={saving}
+          onBack={() => setStep('review')}
+          onConfirm={handleSave}
+        />
+      </>
+    )
+  }
+
+  if (step === 'review') {
     return (
       <div className="screen">
         <header className="appbar">
-          <button className="link" onClick={() => setReview(false)}>
+          <button className="link" onClick={() => setStep('edit')}>
             ‹ Edit
           </button>
           <div className="appbar__title">Review</div>
@@ -129,24 +139,24 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
         </header>
 
         <div className="review">
-          <Row label="Case #" value={`${academicYearLabel(academicYearFor(surgeryDate))} · assigned on save`} />
+          <Row label="Case #" value={`${academicYearLabel(academicYearFor(surgeryDate, ayConfig))} · assigned on save`} />
           <Row label="Date" value={surgeryDate} />
           <Row label="Attending" value={attending} />
           <Row label="Role" value={role} />
           <Row label="Procedure" value={caseName} />
-          <Row label="CPT" value={cpt || '—'} />
           <Row label="Rotation" value={rotation || '—'} />
           <Row label="PGY" value={pgy ? `PGY-${pgy}` : '—'} />
+          <Row label="CPT" value="chosen in the next step" />
         </div>
 
         {error && <div className="banner banner--error">{error}</div>}
 
         <div className="actions">
-          <button className="btn btn--ghost" onClick={() => setReview(false)} disabled={saving}>
+          <button className="btn btn--ghost" onClick={() => setStep('edit')} disabled={saving}>
             Back
           </button>
-          <button className="btn btn--primary" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Confirm & Save'}
+          <button className="btn btn--primary" onClick={() => setStep('cpt')} disabled={saving}>
+            Choose CPT →
           </button>
         </div>
       </div>
@@ -167,7 +177,7 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
         className="form"
         onSubmit={(e) => {
           e.preventDefault()
-          if (canReview) setReview(true)
+          if (canReview) setStep('review')
         }}
       >
         {speech.supported ? (
@@ -243,17 +253,10 @@ export function NewCaseScreen({ onCancel, onSave }: Props) {
         />
 
         <label className="field">
-          <span>
-            CPT code <small>(manual for now)</small>
-          </span>
-          <input value={cpt} onChange={(e) => setCpt(e.target.value)} placeholder="optional" inputMode="numeric" />
-        </label>
-
-        <label className="field">
           <span>Rotation</span>
           <input list="rotations" value={rotation} onChange={(e) => setRotation(e.target.value)} placeholder="type or pick" />
           <datalist id="rotations">
-            {DEFAULT_ROTATIONS.map((r) => (
+            {rotations.map((r) => (
               <option key={r} value={r} />
             ))}
           </datalist>

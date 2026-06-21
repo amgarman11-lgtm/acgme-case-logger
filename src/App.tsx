@@ -3,6 +3,7 @@ import { ensureSession } from './lib/session'
 import { useCases } from './hooks/useCases'
 import { CaseListScreen } from './screens/CaseListScreen'
 import { NewCaseScreen } from './screens/NewCaseScreen'
+import { DEFAULT_ROTATIONS } from './data/rotations'
 import type { CaseInsert } from './types/models'
 
 type Screen = 'list' | 'new'
@@ -54,6 +55,6 @@ export default function App() {
       onToggleLogged={setLogged}
     />
   ) : (
-    <NewCaseScreen onCancel={() => setScreen('list')} onSave={handleSave} />
+    <NewCaseScreen onCancel={() => setScreen('list')} onSave={handleSave} rotations={DEFAULT_ROTATIONS} />
   )
 }
