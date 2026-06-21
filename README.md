@@ -12,8 +12,8 @@ React + Vite + TypeScript, backed by Supabase (Postgres + Auth + Realtime).
 
 | Phase | Scope | Status |
 |------|-------|--------|
-| **1** | Supabase schema + RLS, installable PWA shell, case list, **manual** case entry against the live table | ✅ this phase |
-| 2 | Voice dictation (Web Speech API) | ⏳ |
+| **1** | Supabase schema + RLS, installable PWA shell, case list, **manual** case entry against the live table | ✅ done |
+| **2** | Voice dictation (Web Speech API) for attending, role, case name | ✅ this phase |
 | 3 | CPT suggestion module | ⏳ |
 | 4 | Google auth + Realtime sync + logged-toggle write-back | ⏳ |
 | 5 | Offline IndexedDB queue + .xlsx export + Vercel deploy | ⏳ |
