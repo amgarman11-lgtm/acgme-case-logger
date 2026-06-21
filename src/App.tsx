@@ -1,22 +1,30 @@
 import { useEffect, useState } from 'react'
-import { ensureSession } from './lib/session'
+import { ensureSession, getCurrentUser, signInWithGoogle, signOut } from './lib/session'
 import { useCases } from './hooks/useCases'
+import { useSettings } from './state/settings'
 import { CaseListScreen } from './screens/CaseListScreen'
 import { NewCaseScreen } from './screens/NewCaseScreen'
-import { DEFAULT_ROTATIONS } from './data/rotations'
+import { SettingsScreen } from './screens/SettingsScreen'
 import type { CaseInsert } from './types/models'
 
-type Screen = 'list' | 'new'
+type Screen = 'list' | 'new' | 'settings'
 
 export default function App() {
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [screen, setScreen] = useState<Screen>('list')
-  const { cases, loading, error, addCase, setLogged, unloggedCount } = useCases()
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  const cases = useCases()
+  const settings = useSettings()
 
   useEffect(() => {
     ensureSession()
-      .then(() => setReady(true))
+      .then(async () => {
+        const u = await getCurrentUser()
+        setUserEmail(u && !u.is_anonymous ? u.email ?? null : null)
+        setReady(true)
+      })
       .catch((e) => setBootError(e instanceof Error ? e.message : 'Sign-in failed'))
   }, [])
 
@@ -26,7 +34,6 @@ export default function App() {
         <div className="banner banner--error">{bootError}</div>
         <p className="hint">
           If this mentions anonymous sign-in, enable it in Supabase → Authentication → Sign In / Providers.
-          (Phase-1 bridge; Google sign-in replaces it in Phase 4.)
         </p>
       </div>
     )
@@ -41,20 +48,53 @@ export default function App() {
   }
 
   const handleSave = async (payload: CaseInsert) => {
-    await addCase(payload)
+    await cases.addCase(payload)
     setScreen('list')
   }
 
-  return screen === 'list' ? (
+  if (screen === 'new') {
+    return (
+      <NewCaseScreen
+        onCancel={() => setScreen('list')}
+        onSave={handleSave}
+        rotations={settings.rotations}
+        cptMap={settings.cptMap}
+        ayConfig={settings.ayConfig}
+      />
+    )
+  }
+
+  if (screen === 'settings') {
+    return (
+      <SettingsScreen
+        onBack={() => setScreen('list')}
+        rotations={settings.rotations}
+        cptOverrides={settings.cptOverrides}
+        ayConfig={settings.ayConfig}
+        saveRotations={settings.saveRotations}
+        saveCptOverrides={settings.saveCptOverrides}
+        saveAyConfig={settings.saveAyConfig}
+        userEmail={userEmail}
+        onSignInGoogle={signInWithGoogle}
+        onSignOut={async () => {
+          await signOut()
+          location.reload()
+        }}
+      />
+    )
+  }
+
+  return (
     <CaseListScreen
-      cases={cases}
-      loading={loading}
-      error={error}
-      unloggedCount={unloggedCount}
+      cases={cases.cases}
+      pending={cases.queued}
+      loading={cases.loading}
+      error={cases.error}
+      unloggedCount={cases.unloggedCount}
+      unsyncedCount={cases.unsyncedCount}
       onNew={() => setScreen('new')}
-      onToggleLogged={setLogged}
+      onSettings={() => setScreen('settings')}
+      onToggleLogged={cases.setLogged}
     />
-  ) : (
-    <NewCaseScreen onCancel={() => setScreen('list')} onSave={handleSave} rotations={DEFAULT_ROTATIONS} />
   )
 }
