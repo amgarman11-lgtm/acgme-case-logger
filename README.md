@@ -7,6 +7,11 @@ deployable to Vercel.
 > **NO PHI.** This app never captures, stores, or transmits MRN, patient name,
 > DOB, or any direct identifier. Only the de-identified fields below are stored.
 
+**▶ Live app:** https://amgarman11-lgtm.github.io/acgme-case-logger/
+**Repo:** https://github.com/amgarman11-lgtm/acgme-case-logger
+
+On iPhone: open the live URL in Safari → **Share → Add to Home Screen**.
+
 ---
 
 ## Status — all phases complete ✅
@@ -68,17 +73,25 @@ npm run preview    # serve the production build (best for testing the installed 
 
 ---
 
-## Deploy to Vercel
+## Deploy
 
-This is a standard Vite SPA; Vercel auto-detects the framework.
+The app is **live on GitHub Pages**: https://amgarman11-lgtm.github.io/acgme-case-logger/
+(served from the `gh-pages` branch; the build uses a relative base so it works under the
+`/acgme-case-logger/` subpath).
 
-- **CLI:** from the project root, `vercel deploy --prod` (after `vercel login`).
-- **Git integration:** push to a Git remote connected to Vercel; it builds on every push.
+**Redeploy after code changes:**
+```bash
+npm run build
+cd dist && touch .nojekyll && git init -b gh-pages -q && git add -A \
+  && git commit -qm deploy \
+  && git push -f https://github.com/amgarman11-lgtm/acgme-case-logger.git gh-pages \
+  && cd .. && rm -rf dist/.git
+```
 
-`vercel.json` includes the SPA rewrite. Because the publishable key is committed, no Vercel
-environment variables are required for the app to connect. (To use env vars instead, set
-`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the Vercel project and remove the committed
-fallback in `src/lib/supabaseClient.ts`.)
+**Alternative — Vercel** (root domain, no subpath): run `vercel --prod` after `vercel login`.
+`vercel.json` includes the SPA rewrite. The committed publishable key means no env vars are
+required; to use env vars instead, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` and drop the
+fallback in `src/lib/supabaseClient.ts`.
 
 ---
 
