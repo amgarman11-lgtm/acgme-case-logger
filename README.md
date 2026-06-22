@@ -122,18 +122,22 @@ The button is already wired (`Settings → Account → Sign in with Google` →
 One-way push of all your cases to a Google Sheet, via a Google Apps Script web app
 (no Google OAuth needed in the app). One-time setup:
 
-1. Create a Google Sheet.
-2. **Extensions → Apps Script**, paste this, and **Save**:
+1. Open the Google Sheet you want to use — an **existing** one is fine (or make a new one at
+   [sheets.new](https://sheets.new)).
+2. **Extensions → Apps Script**, paste this, and **Save**. It writes to a dedicated **"ACGME Cases"**
+   tab, so the rest of your sheet is left untouched:
    ```javascript
    function doPost(e) {
-     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+     var ss = SpreadsheetApp.getActiveSpreadsheet();
+     var sheet = ss.getSheetByName('ACGME Cases') || ss.insertSheet('ACGME Cases');
      var data = JSON.parse(e.postData.contents);
      var rows = data.cases || [];
      var headers = ['case_number','surgery_date','attending','role','procedure',
                     'cpt','cpt_description','rotation','pgy','logged_to_acgme','created_at'];
+     var out = [headers];
+     rows.forEach(function (r) { out.push(headers.map(function (h) { return r[h]; })); });
      sheet.clearContents();
-     sheet.appendRow(headers);
-     rows.forEach(function (r) { sheet.appendRow(headers.map(function (h) { return r[h]; })); });
+     sheet.getRange(1, 1, out.length, headers.length).setValues(out);
      return ContentService.createTextOutput('ok');
    }
    ```
@@ -141,7 +145,7 @@ One-way push of all your cases to a Google Sheet, via a Google Apps Script web a
    `/exec` URL.
 4. In the app: **Settings → Google Sheet sync**, paste the URL, tap **Save & sync now**.
 
-Each sync rewrites the sheet with a full snapshot of your cases. (It's one-way app→Sheet; the response
+Each sync rewrites the **ACGME Cases** tab with a full snapshot of your cases. (It's one-way app→Sheet; the response
 is opaque to the browser, so confirm the write in the Sheet itself.) The reference column is included,
 and — like the rest of the app — it should never contain PHI.
 
