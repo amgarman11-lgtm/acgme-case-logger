@@ -1,6 +1,6 @@
 // Generated from the live Supabase schema (supabase MCP / `npm run gen-types`).
 // Do not edit the generated section by hand; re-generate after each migration.
-// Convenience aliases used across the app are at the bottom of this file.
+// App-facing aliases live in ./models.ts so re-generation never clobbers them.
 
 export type Json =
   | string
@@ -11,8 +11,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
@@ -24,6 +22,7 @@ export type Database = {
           attending_name: string
           case_name: string
           case_number: string | null
+          case_ref: string | null
           case_seq: number
           cpt_code: string | null
           cpt_description: string | null
@@ -41,6 +40,7 @@ export type Database = {
           attending_name: string
           case_name: string
           case_number?: string | null
+          case_ref?: string | null
           case_seq?: number
           cpt_code?: string | null
           cpt_description?: string | null
@@ -58,6 +58,7 @@ export type Database = {
           attending_name?: string
           case_name?: string
           case_number?: string | null
+          case_ref?: string | null
           case_seq?: number
           cpt_code?: string | null
           cpt_description?: string | null
@@ -74,26 +75,32 @@ export type Database = {
       }
       user_settings: {
         Row: {
+          attendings: Json
           ay_start_day: number
           ay_start_month: number
           cpt_map: Json | null
           rotations: Json
+          sheet_webhook: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          attendings?: Json
           ay_start_day?: number
           ay_start_month?: number
           cpt_map?: Json | null
           rotations?: Json
+          sheet_webhook?: string | null
           updated_at?: string
           user_id?: string
         }
         Update: {
+          attendings?: Json
           ay_start_day?: number
           ay_start_month?: number
           cpt_map?: Json | null
           rotations?: Json
+          sheet_webhook?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -107,11 +114,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      resident_role:
-        | "Surgeon-Chief"
-        | "Surgeon-Junior"
-        | "First Assistant"
-        | "Teaching Assistant"
+      resident_role: "Surgeon-Chief" | "Surgeon-Junior" | "First Assistant" | "Teaching Assistant"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -219,32 +222,10 @@ export type Enums<
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
 
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
 export const Constants = {
   public: {
     Enums: {
-      resident_role: [
-        "Surgeon-Chief",
-        "Surgeon-Junior",
-        "First Assistant",
-        "Teaching Assistant",
-      ],
+      resident_role: ["Surgeon-Chief", "Surgeon-Junior", "First Assistant", "Teaching Assistant"],
     },
   },
 } as const

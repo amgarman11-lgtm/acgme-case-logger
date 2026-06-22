@@ -21,15 +21,18 @@ interface Props {
   rows?: number
   autoCapitalize?: string
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'search' | 'email' | 'url'
+  datalistOptions?: string[]
   // Voice props are driven by the parent (one shared mic session).
   voiceSupported: boolean
   listening: boolean
   interim: string
   onMicToggle: () => void
+  micDisabled?: boolean
 }
 
-// A text/textarea field with an optional dictation button. Typing is always
-// available; the mic only appears when the Web Speech API is supported.
+// A text/textarea field with an optional dictation button and optional datalist
+// autocomplete. Typing is always available; the mic only appears when the Web
+// Speech API is supported.
 export function VoiceField({
   id,
   label,
@@ -40,11 +43,14 @@ export function VoiceField({
   rows = 2,
   autoCapitalize,
   inputMode,
+  datalistOptions,
   voiceSupported,
   listening,
   interim,
   onMicToggle,
+  micDisabled,
 }: Props) {
+  const listId = datalistOptions && datalistOptions.length ? `${id}-list` : undefined
   return (
     <div className="field">
       <div className="field__labelrow">
@@ -56,6 +62,7 @@ export function VoiceField({
             onClick={onMicToggle}
             aria-pressed={listening}
             aria-label={listening ? 'Stop dictation' : 'Dictate'}
+            disabled={micDisabled}
           >
             {listening ? (
               <>
@@ -82,7 +89,15 @@ export function VoiceField({
           placeholder={placeholder}
           autoCapitalize={autoCapitalize}
           inputMode={inputMode}
+          list={listId}
         />
+      )}
+      {listId && (
+        <datalist id={listId}>
+          {datalistOptions!.map((o) => (
+            <option key={o} value={o} />
+          ))}
+        </datalist>
       )}
 
       {listening && <div className="voice-interim">{interim || 'Listening… speak now'}</div>}

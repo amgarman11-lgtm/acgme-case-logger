@@ -32,6 +32,7 @@ export function CaseCard({ c, onToggleLogged }: Props) {
           {c.cpt_code ? <span>CPT {c.cpt_code}</span> : null}
         </div>
       )}
+      {c.case_ref ? <div className="case-card__meta case-card__meta--sub">Ref: {c.case_ref}</div> : null}
       <div className="case-card__foot">
         <LoggedToggle logged={c.logged_to_acgme} onChange={(next) => onToggleLogged(c.id, next)} />
       </div>

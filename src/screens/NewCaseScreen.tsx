@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CaseInsert, ResidentRole } from '../types/models'
 import {
   DEFAULT_AY_CONFIG,
@@ -11,6 +11,8 @@ import { useSpeech } from '../hooks/useSpeech'
 import { VoiceField } from '../components/VoiceField'
 import { CptConfirm, type CptChoice } from '../components/CptConfirm'
 import type { CptMap } from '../cpt'
+import { parseCaseDictation, type ParsedCase } from '../lib/parseDictation'
+import { matchAttending } from '../lib/matchAttending'
 
 const ROLES: ResidentRole[] = ['Surgeon-Chief', 'Surgeon-Junior', 'First Assistant', 'Teaching Assistant']
 const PGYS = [1, 2, 3, 4, 5, 6, 7]
@@ -18,14 +20,12 @@ const PGYS = [1, 2, 3, 4, 5, 6, 7]
 type VoiceTarget = 'attending' | 'caseName' | 'role'
 type Step = 'edit' | 'review' | 'cpt'
 
-/** Append a dictated phrase to existing text (so multiple utterances accumulate). */
 function joinSpeech(prev: string, text: string): string {
   const t = text.trim()
   if (!t) return prev
   return prev.trim() ? `${prev.trim()} ${t}` : t
 }
 
-/** Map a spoken phrase to one of the constrained ACGME roles. */
 function matchRole(text: string): ResidentRole | null {
   const t = text.toLowerCase()
   if (t.includes('chief')) return 'Surgeon-Chief'
@@ -39,17 +39,19 @@ interface Props {
   onCancel: () => void
   onSave: (payload: CaseInsert) => Promise<void>
   rotations: string[]
+  attendings: string[]
   cptMap?: CptMap
   ayConfig?: AyConfig
 }
 
-// Phase 2+3: voice dictation + CPT confirmation.
-// Flow: edit -> review -> CPT confirm -> save. Manual editing is always
-// available; nothing is saved without the final confirmation.
-export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = DEFAULT_AY_CONFIG }: Props) {
+// Phases 2/3/6: master full-case dictation + per-field dictation + CPT confirm.
+// Flow: edit -> review -> CPT confirm -> save. Manual editing is always available;
+// nothing is saved without the final confirmation.
+export function NewCaseScreen({ onCancel, onSave, rotations, attendings, cptMap, ayConfig = DEFAULT_AY_CONFIG }: Props) {
   const [attending, setAttending] = useState('')
   const [role, setRole] = useState<ResidentRole | ''>('')
   const [caseName, setCaseName] = useState('')
+  const [caseRef, setCaseRef] = useState('')
   const [rotation, setRotation] = useState('')
   const [pgy, setPgy] = useState<number | ''>('')
   const [surgeryDate, setSurgeryDate] = useState(todayLocalISO())
@@ -60,6 +62,12 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
 
   const speech = useSpeech()
   const [activeField, setActiveField] = useState<VoiceTarget | null>(null)
+
+  // Master "dictate full case": accumulate the transcript, then parse on stop.
+  const [masterActive, setMasterActive] = useState(false)
+  const [masterText, setMasterText] = useState('')
+  const masterRef = useRef('')
+  const [fillNote, setFillNote] = useState<string | null>(null)
 
   useEffect(() => {
     if (!speech.listening) setActiveField(null)
@@ -75,9 +83,12 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
     setActiveField(field)
     if (field === 'role') setRoleNote(null)
     speech.start((finalText) => {
-      if (field === 'attending') setAttending((prev) => joinSpeech(prev, finalText))
-      else if (field === 'caseName') setCaseName((prev) => joinSpeech(prev, finalText))
-      else {
+      if (field === 'attending') {
+        const m = attendings.length ? matchAttending(finalText, attendings) : null
+        setAttending(m ?? finalText.trim())
+      } else if (field === 'caseName') {
+        setCaseName((prev) => joinSpeech(prev, finalText))
+      } else {
         const matched = matchRole(finalText)
         if (matched) {
           setRole(matched)
@@ -89,6 +100,61 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
     })
   }
 
+  function applyParsed(p: ParsedCase) {
+    const filled: string[] = []
+    if (p.attending) {
+      setAttending(p.attending)
+      filled.push('attending')
+    }
+    if (p.role) {
+      setRole(p.role)
+      filled.push('role')
+    }
+    if (p.caseName) {
+      setCaseName(p.caseName)
+      filled.push('procedure')
+    }
+    if (p.pgy) {
+      setPgy(p.pgy)
+      filled.push('PGY')
+    }
+    if (p.rotation) {
+      setRotation(p.rotation)
+      filled.push('rotation')
+    }
+    if (p.reference) {
+      setCaseRef(p.reference)
+      filled.push('reference')
+    }
+    setFillNote(
+      filled.length
+        ? `Filled from dictation: ${filled.join(', ')}. Review and edit below.`
+        : 'Couldn’t parse the fields — please enter them manually or try again.',
+    )
+  }
+
+  function toggleMaster() {
+    if (masterActive) {
+      speech.stop()
+      setMasterActive(false)
+      const captured = masterRef.current
+      // Let a trailing final result land before parsing.
+      setTimeout(() => applyParsed(parseCaseDictation(captured, { attendings, rotations })), 700)
+      return
+    }
+    masterRef.current = ''
+    setMasterText('')
+    setFillNote(null)
+    setMasterActive(true)
+    speech.start(
+      (seg) => {
+        masterRef.current = joinSpeech(masterRef.current, seg)
+        setMasterText(masterRef.current)
+      },
+      { continuous: true },
+    )
+  }
+
   async function handleSave(cpt: CptChoice) {
     setSaving(true)
     setError(null)
@@ -98,6 +164,7 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
         attending_name: attending.trim(),
         resident_role: role as ResidentRole,
         case_name: caseName.trim(),
+        case_ref: caseRef.trim() || null,
         cpt_code: cpt.code,
         cpt_description: cpt.description,
         rotation: rotation.trim() || null,
@@ -108,7 +175,7 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
       setSaving(false)
-      setStep('review') // bring the user back to a screen with the error visible
+      setStep('review')
     }
   }
 
@@ -116,13 +183,7 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
     return (
       <>
         {error && <div className="banner banner--error">{error}</div>}
-        <CptConfirm
-          caseName={caseName}
-          map={cptMap}
-          saving={saving}
-          onBack={() => setStep('review')}
-          onConfirm={handleSave}
-        />
+        <CptConfirm caseName={caseName} map={cptMap} saving={saving} onBack={() => setStep('review')} onConfirm={handleSave} />
       </>
     )
   }
@@ -140,6 +201,7 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
 
         <div className="review">
           <Row label="Case #" value={`${academicYearLabel(academicYearFor(surgeryDate, ayConfig))} · assigned on save`} />
+          <Row label="Reference" value={caseRef || '—'} />
           <Row label="Date" value={surgeryDate} />
           <Row label="Attending" value={attending} />
           <Row label="Role" value={role} />
@@ -181,7 +243,26 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
         }}
       >
         {speech.supported ? (
-          <p className="voice-note">🎤 Tap “Dictate” to speak a field; tap again for each phrase. You can always type instead.</p>
+          <>
+            <button
+              type="button"
+              className={`master-btn ${masterActive ? 'master-btn--on' : ''}`}
+              onClick={toggleMaster}
+              disabled={activeField !== null}
+            >
+              {masterActive ? '■  Stop & fill fields' : '🎤  Dictate full case'}
+            </button>
+            {masterActive && (
+              <div className="master-live">
+                <div className="master-live__label">
+                  <span className="mic__dot" /> Listening — say the attending, your role, the procedure, PGY, rotation…
+                </div>
+                <div className="master-live__text">{[masterText, speech.interim].filter(Boolean).join(' ') || '…'}</div>
+              </div>
+            )}
+            {fillNote && <div className="banner banner--info">{fillNote}</div>}
+            <p className="voice-note">Or use the per-field “Dictate” buttons. You can always type instead.</p>
+          </>
         ) : (
           <p className="voice-note">Voice input isn’t available in this browser — type your entries (or use your keyboard’s mic).</p>
         )}
@@ -194,10 +275,12 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
           onChange={setAttending}
           placeholder="Dr. …"
           autoCapitalize="words"
+          datalistOptions={attendings}
           voiceSupported={speech.supported}
           listening={speech.listening && activeField === 'attending'}
           interim={speech.interim}
           onMicToggle={() => toggleMic('attending')}
+          micDisabled={masterActive}
         />
 
         <div className="field">
@@ -210,6 +293,7 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
                 onClick={() => toggleMic('role')}
                 aria-pressed={speech.listening && activeField === 'role'}
                 aria-label={speech.listening && activeField === 'role' ? 'Stop dictation' : 'Dictate role'}
+                disabled={masterActive}
               >
                 {speech.listening && activeField === 'role' ? (
                   <>
@@ -250,7 +334,22 @@ export function NewCaseScreen({ onCancel, onSave, rotations, cptMap, ayConfig = 
           listening={speech.listening && activeField === 'caseName'}
           interim={speech.interim}
           onMicToggle={() => toggleMic('caseName')}
+          micDisabled={masterActive}
         />
+
+        <label className="field">
+          <span>
+            Case reference <small>(optional, de-identified)</small>
+          </span>
+          <input
+            value={caseRef}
+            onChange={(e) => setCaseRef(e.target.value)}
+            placeholder="e.g. OR2-Tue-a"
+          />
+          <div className="voice-hint voice-hint--warn">
+            De-identified label only — never enter MRN, patient name, or date of birth.
+          </div>
+        </label>
 
         <label className="field">
           <span>Rotation</span>

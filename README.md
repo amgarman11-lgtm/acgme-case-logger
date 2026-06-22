@@ -29,16 +29,22 @@ On iPhone: open the live URL in Safari → **Share → Add to Home Screen**.
 ## Features
 
 - **Installable PWA** — add to the iOS home screen; launches full-screen, works offline.
-- **Voice capture** — dictate attending, resident role, and procedure name (Web Speech API),
-  with live transcription and an edit-before-save review. Manual typing always works as a fallback.
+- **Master dictation** — one button: speak the whole case ("Dr. Smith, I was chief on a lap chole,
+  PGY-4, trauma") and an on-device parser fills attending, role, procedure, PGY, rotation, and an
+  optional reference. Per-field dictation is also available. Manual typing always works as a fallback.
+- **Attendings list** — saved attendings are fuzzy-matched to dictated names, so a mis-heard name
+  ("doctor smyth") snaps to the right person ("Dr. Smith").
 - **Auto case numbers** — `YYYY-NNNN`, assigned server-side, reset each academic year (default Jul 1).
-- **CPT suggestions** — dictated procedure → ranked CPT candidates; you must tap to confirm one
-  (or choose none / enter manually). Seeded with ~35 general-surgery procedures, editable in Settings.
+- **CPT suggestions** — dictated procedure → ranked CPT candidates with the top match pre-selected;
+  you still tap to confirm (or choose none / enter manually). ~70 seeded general-surgery procedures,
+  editable in Settings.
+- **De-identified case reference** — optional free-text label *you* assign (e.g. `OR2-Tue-a`),
+  captured in dictation. **Never a patient identifier** — see the NO-PHI note above.
 - **Offline-first** — saves made offline are queued in IndexedDB and auto-sync on reconnect, with a
   clear synced/unsynced indicator.
 - **Realtime** — the case list updates live across tabs/devices that share an identity.
-- **Settings** — account, rotation-list editor, custom CPT mappings, academic-year config, and
-  **Export to .xlsx**.
+- **Settings** — account, attendings editor, rotation-list editor, custom CPT mappings, academic-year
+  config, **Google Sheet sync**, and **Export to .xlsx**.
 - **Row Level Security** — every row is scoped to its owner; users only ever see their own cases.
 
 ---
@@ -111,13 +117,42 @@ The button is already wired (`Settings → Account → Sign in with Google` →
 
 ---
 
+## Sync to a Google Sheet (optional)
+
+One-way push of all your cases to a Google Sheet, via a Google Apps Script web app
+(no Google OAuth needed in the app). One-time setup:
+
+1. Create a Google Sheet.
+2. **Extensions → Apps Script**, paste this, and **Save**:
+   ```javascript
+   function doPost(e) {
+     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+     var data = JSON.parse(e.postData.contents);
+     var rows = data.cases || [];
+     var headers = ['case_number','surgery_date','attending','role','procedure',
+                    'cpt','cpt_description','rotation','pgy','logged_to_acgme','created_at'];
+     sheet.clearContents();
+     sheet.appendRow(headers);
+     rows.forEach(function (r) { sheet.appendRow(headers.map(function (h) { return r[h]; })); });
+     return ContentService.createTextOutput('ok');
+   }
+   ```
+3. **Deploy → New deployment → Web app**: *Execute as* = **Me**, *Who has access* = **Anyone**. Copy the
+   `/exec` URL.
+4. In the app: **Settings → Google Sheet sync**, paste the URL, tap **Save & sync now**.
+
+Each sync rewrites the sheet with a full snapshot of your cases. (It's one-way app→Sheet; the response
+is opaque to the browser, so confirm the write in the Sheet itself.) The reference column is included,
+and — like the rest of the app — it should never contain PHI.
+
 ## Data model (de-identified only)
 
 `public.cases` — `case_number` (`YYYY-NNNN`, server-assigned), `surgery_date`, `attending_name`,
 `resident_role` (ACGME enum), `case_name`, `cpt_code` + `cpt_description`, `rotation`, `pgy_year`,
-`logged_to_acgme`, `created_at`, `user_id`.
+`case_ref` (optional de-identified label — never PHI), `logged_to_acgme`, `created_at`, `user_id`.
 
-`public.user_settings` — `rotations`, `cpt_map` (overrides), `ay_start_month` / `ay_start_day`.
+`public.user_settings` — `rotations`, `attendings`, `cpt_map` (overrides),
+`ay_start_month` / `ay_start_day`, `sheet_webhook`.
 
 Migrations are in `supabase/migrations/`. RLS restricts every operation to `auth.uid() = user_id`.
 Case numbers are assigned by a `BEFORE INSERT` trigger so sequencing stays correct even when offline

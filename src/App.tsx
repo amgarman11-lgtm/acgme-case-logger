@@ -58,6 +58,7 @@ export default function App() {
         onCancel={() => setScreen('list')}
         onSave={handleSave}
         rotations={settings.rotations}
+        attendings={settings.attendings}
         cptMap={settings.cptMap}
         ayConfig={settings.ayConfig}
       />
@@ -69,11 +70,15 @@ export default function App() {
       <SettingsScreen
         onBack={() => setScreen('list')}
         rotations={settings.rotations}
+        attendings={settings.attendings}
         cptOverrides={settings.cptOverrides}
         ayConfig={settings.ayConfig}
+        sheetWebhook={settings.sheetWebhook}
         saveRotations={settings.saveRotations}
+        saveAttendings={settings.saveAttendings}
         saveCptOverrides={settings.saveCptOverrides}
         saveAyConfig={settings.saveAyConfig}
+        saveSheetWebhook={settings.saveSheetWebhook}
         userEmail={userEmail}
         onSignInGoogle={signInWithGoogle}
         onSignOut={async () => {

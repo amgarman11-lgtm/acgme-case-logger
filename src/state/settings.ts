@@ -7,18 +7,22 @@ import type { UserSettingsRow } from '../types/models'
 import type { Json } from '../types/database'
 
 // Per-user settings, synced via the user_settings table (rotation list, CPT-map
-// overrides, academic-year config). Falls back to seeds before the row loads.
+// overrides, academic-year config, attendings list, Google Sheet webhook).
 export function useSettings() {
   const [rotations, setRotations] = useState<string[]>(DEFAULT_ROTATIONS)
+  const [attendings, setAttendings] = useState<string[]>([])
   const [cptOverrides, setCptOverrides] = useState<CptMap | null>(null)
   const [ayConfig, setAyConfig] = useState<AyConfig>(DEFAULT_AY_CONFIG)
+  const [sheetWebhook, setSheetWebhook] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const apply = useCallback((row: UserSettingsRow | null) => {
     if (!row) return
     if (Array.isArray(row.rotations) && row.rotations.length) setRotations(row.rotations as string[])
+    if (Array.isArray(row.attendings)) setAttendings(row.attendings as string[])
     setCptOverrides((row.cpt_map as unknown as CptMap | null) ?? null)
     setAyConfig({ startMonth: row.ay_start_month ?? 7, startDay: row.ay_start_day ?? 1 })
+    setSheetWebhook(row.sheet_webhook ?? null)
   }, [])
 
   const loadSettings = useCallback(async () => {
@@ -53,7 +57,16 @@ export function useSettings() {
   }, [loadSettings])
 
   const persist = useCallback(
-    async (patch: Partial<{ rotations: string[]; cpt_map: CptMap | null; ay_start_month: number; ay_start_day: number }>) => {
+    async (
+      patch: Partial<{
+        rotations: string[]
+        attendings: string[]
+        cpt_map: CptMap | null
+        ay_start_month: number
+        ay_start_day: number
+        sheet_webhook: string | null
+      }>,
+    ) => {
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -61,21 +74,31 @@ export function useSettings() {
       const row = {
         user_id: user.id,
         rotations: (patch.rotations ?? rotations) as unknown as Json,
+        attendings: (patch.attendings ?? attendings) as unknown as Json,
         cpt_map: (patch.cpt_map !== undefined ? patch.cpt_map : cptOverrides) as unknown as Json,
         ay_start_month: patch.ay_start_month ?? ayConfig.startMonth,
         ay_start_day: patch.ay_start_day ?? ayConfig.startDay,
+        sheet_webhook: patch.sheet_webhook !== undefined ? patch.sheet_webhook : sheetWebhook,
         updated_at: new Date().toISOString(),
       }
       const { error } = await supabase.from('user_settings').upsert(row)
       if (error) throw error
     },
-    [rotations, cptOverrides, ayConfig],
+    [rotations, attendings, cptOverrides, ayConfig, sheetWebhook],
   )
 
   const saveRotations = useCallback(
     async (next: string[]) => {
       setRotations(next)
       await persist({ rotations: next })
+    },
+    [persist],
+  )
+
+  const saveAttendings = useCallback(
+    async (next: string[]) => {
+      setAttendings(next)
+      await persist({ attendings: next })
     },
     [persist],
   )
@@ -96,7 +119,28 @@ export function useSettings() {
     [persist],
   )
 
+  const saveSheetWebhook = useCallback(
+    async (next: string | null) => {
+      setSheetWebhook(next)
+      await persist({ sheet_webhook: next })
+    },
+    [persist],
+  )
+
   const cptMap = mergeCptMap(seedCptMap, cptOverrides)
 
-  return { rotations, cptOverrides, cptMap, ayConfig, loading, saveRotations, saveCptOverrides, saveAyConfig }
+  return {
+    rotations,
+    attendings,
+    cptOverrides,
+    cptMap,
+    ayConfig,
+    sheetWebhook,
+    loading,
+    saveRotations,
+    saveAttendings,
+    saveCptOverrides,
+    saveAyConfig,
+    saveSheetWebhook,
+  }
 }

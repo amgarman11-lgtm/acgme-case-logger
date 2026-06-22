@@ -20,7 +20,9 @@ const NONE = '__none__'
 // "None / enter manually"); a single suggestion is never auto-committed.
 export function CptConfirm({ caseName, map, saving, onBack, onConfirm }: Props) {
   const suggestions = useMemo<CptSuggestion[]>(() => suggestCpt(caseName, map), [caseName, map])
-  const [selected, setSelected] = useState<string | null>(null)
+  // Pre-select the top match so the appropriate CPT is auto-added — but the user
+  // still taps Save to commit it (never silently committed).
+  const [selected, setSelected] = useState<string | null>(() => suggestions[0]?.code ?? null)
   const [manualCode, setManualCode] = useState('')
 
   const decided = selected !== null

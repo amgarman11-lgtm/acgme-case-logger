@@ -7,6 +7,7 @@ export async function exportCasesToXlsx(cases: CaseRow[], filename = 'acgme-case
   const XLSX = await import('xlsx')
   const rows = cases.map((c) => ({
     'Case #': c.case_number ?? '',
+    Reference: c.case_ref ?? '',
     'Surgery date': c.surgery_date,
     Attending: c.attending_name,
     Role: c.resident_role,
@@ -21,7 +22,7 @@ export async function exportCasesToXlsx(cases: CaseRow[], filename = 'acgme-case
 
   const ws = XLSX.utils.json_to_sheet(rows)
   ws['!cols'] = [
-    { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 36 },
+    { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 36 },
     { wch: 8 }, { wch: 36 }, { wch: 18 }, { wch: 6 }, { wch: 16 }, { wch: 22 },
   ]
   const wb = XLSX.utils.book_new()

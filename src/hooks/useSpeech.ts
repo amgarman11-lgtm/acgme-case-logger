@@ -35,6 +35,11 @@ interface SpeechRecognitionInstance {
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionInstance
 
+interface StartOptions {
+  continuous?: boolean
+  lang?: string
+}
+
 function getCtor(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null
   const w = window as unknown as {
@@ -56,78 +61,114 @@ function friendlyError(code: string): string {
     case 'network':
       return 'Network error during speech recognition.'
     case 'aborted':
-      return '' // user-initiated stop; not a real error
+      return ''
     default:
       return `Speech recognition error: ${code}`
   }
 }
 
-// Web Speech API wrapper. Uses non-continuous recognition (one utterance per
-// tap), which is the most reliable mode on iOS Safari, where dictation tends to
-// end after each phrase. Always pair with manual text editing as a fallback.
+// Web Speech API wrapper.
+// - Per-field mode (default): one utterance per tap — most reliable on iOS.
+// - Continuous mode (master dictation): keeps capturing across pauses by
+//   auto-restarting on `end` (iOS ends after each phrase) until stop() is called.
+// Always pair with manual text editing as a fallback.
 export function useSpeech() {
   const ctor = useMemo(getCtor, [])
   const recRef = useRef<SpeechRecognitionInstance | null>(null)
+  const keepAliveRef = useRef(false)
+  const continuousRef = useRef(false)
+  const langRef = useRef('en-US')
+  const onFinalRef = useRef<((text: string) => void) | null>(null)
   const [listening, setListening] = useState(false)
   const [interim, setInterim] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const stop = useCallback(() => {
-    recRef.current?.stop()
-  }, [])
+  const begin = useCallback(() => {
+    if (!ctor) return
+    const rec = new ctor()
+    rec.lang = langRef.current
+    rec.interimResults = true
+    rec.continuous = continuousRef.current
+    rec.maxAlternatives = 1
 
-  const start = useCallback(
-    (onFinal: (text: string) => void, lang = 'en-US') => {
-      if (!ctor) return
-      // Tear down any previous instance so only one mic session runs at a time.
-      recRef.current?.abort()
-
-      const rec = new ctor()
-      rec.lang = lang
-      rec.interimResults = true
-      rec.continuous = false
-      rec.maxAlternatives = 1
-
-      rec.onresult = (e) => {
-        let interimText = ''
-        let finalText = ''
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const res = e.results[i]
-          const txt = res[0]?.transcript ?? ''
-          if (res.isFinal) finalText += txt
-          else interimText += txt
-        }
-        setInterim(interimText)
-        if (finalText) {
-          onFinal(finalText)
+    rec.onresult = (e) => {
+      let interimText = ''
+      let finalText = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i]
+        const txt = res[0]?.transcript ?? ''
+        if (res.isFinal) finalText += txt
+        else interimText += txt
+      }
+      setInterim(interimText)
+      if (finalText) {
+        onFinalRef.current?.(finalText)
+        setInterim('')
+      }
+    }
+    rec.onerror = (e) => {
+      // Stop auto-restarting on terminal errors (e.g. denied mic) so continuous
+      // mode can't spin in a tight restart loop.
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
+        keepAliveRef.current = false
+      }
+      const msg = friendlyError(e.error)
+      if (msg) setError(msg)
+    }
+    rec.onend = () => {
+      if (keepAliveRef.current) {
+        // Continuous: restart to keep listening past the utterance boundary.
+        try {
+          begin()
+        } catch {
+          keepAliveRef.current = false
+          setListening(false)
           setInterim('')
         }
-      }
-      rec.onerror = (e) => {
-        const msg = friendlyError(e.error)
-        if (msg) setError(msg)
-      }
-      rec.onend = () => {
+      } else {
         setListening(false)
         setInterim('')
       }
+    }
 
-      recRef.current = rec
+    recRef.current = rec
+    try {
+      rec.start()
+    } catch {
+      setError('Could not start the microphone — try again.')
+      keepAliveRef.current = false
+      setListening(false)
+    }
+  }, [ctor])
+
+  const start = useCallback(
+    (onFinal: (text: string) => void, opts: StartOptions = {}) => {
+      if (!ctor) return
+      recRef.current?.abort()
+      onFinalRef.current = onFinal
+      langRef.current = opts.lang ?? 'en-US'
+      continuousRef.current = !!opts.continuous
+      keepAliveRef.current = !!opts.continuous
       setError(null)
       setInterim('')
-      try {
-        rec.start()
-        setListening(true)
-      } catch {
-        // Calling start() twice quickly can throw; surface a soft message.
-        setError('Could not start the microphone — try again.')
-        setListening(false)
-      }
+      setListening(true)
+      begin()
     },
-    [ctor],
+    [ctor, begin],
   )
 
-  useEffect(() => () => recRef.current?.abort(), [])
+  const stop = useCallback(() => {
+    keepAliveRef.current = false
+    recRef.current?.stop()
+  }, [])
+
+  useEffect(
+    () => () => {
+      keepAliveRef.current = false
+      recRef.current?.abort()
+    },
+    [],
+  )
 
   return { supported: ctor !== null, listening, interim, error, start, stop }
 }
