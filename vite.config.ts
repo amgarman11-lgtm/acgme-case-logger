@@ -10,6 +10,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the SW manually in main.tsx so we can force a reload as soon
+      // as a new version is available (otherwise the old page lingers until the
+      // next manual refresh).
+      injectRegister: false,
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'logo.svg', 'pwa-64x64.png'],
       manifest: {
         name: 'ACGME Case Logger',
